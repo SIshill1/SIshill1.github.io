@@ -43,6 +43,19 @@
       align-items:center;
       padding:48px 20px;
       min-height:100vh;
+      position:relative;
+      overflow:hidden; /* чтобы canvas был в фоне */
+    }
+
+    /* canvas для частиц — позади основного контента */
+    canvas#particles{
+      position: absolute;
+      inset: 0;
+      width:100%;
+      height:100%;
+      z-index: 0;
+      pointer-events: none;
+      display:block;
     }
 
     .container{
@@ -52,6 +65,8 @@
       flex-direction:column;
       align-items:center;
       flex:1;
+      position: relative;
+      z-index: 1; /* выше canvas */
     }
 
     .avatar{
@@ -195,6 +210,7 @@
     /* для пользователей, которые отключили анимации */
     @media (prefers-reduced-motion: reduce) {
       *{ transition: none !important; animation: none !important; transform: none !important; }
+      canvas#particles{ display:none !important; } /* если отключили анимации — скрываем canvas */
     }
 
     /* responsive */
@@ -209,6 +225,9 @@
   </style>
 </head>
 <body>
+  <!-- canvas для частиц -->
+  <canvas id="particles" aria-hidden="true"></canvas>
+
   <div class="container">
     <img src="MyAvatarPhoto.png" alt="Avatar" class="avatar" />
     <h1>Artur Kutman | ArtNewMcpe11</h1>
@@ -232,7 +251,7 @@
           <span class="arrow"><i data-lucide="chevron-right"></i></span>
         </a>
 
-        <a class="link" href="https://" role="listitem" aria-label="VK">
+        <a class="link" href="https://vk.com/id691172350" role="listitem" aria-label="VK">
           <div class="left">
             <span class="icon-circle"><i data-lucide="users"></i></span>
             <span class="text">VK</span>
@@ -264,7 +283,7 @@
           <span class="arrow"><i data-lucide="chevron-right"></i></span>
         </a>
 
-        <a class="link" href="#" role="listitem" aria-label="Steam">
+        <a class="link" href="https://steamcommunity.com/profiles/76561199764258501/" role="listitem" aria-label="Steam">
           <div class="left">
             <span class="icon-circle"><i data-lucide="gamepad"></i></span>
             <span class="text">Steam</span>
@@ -288,9 +307,10 @@
   </footer>
 
   <script>
+    // Иконки lucide
     lucide.createIcons();
 
-    // автоматическое поведение ссылок и тултипов
+    // --- автоматическое поведение ссылок и тултипов (как было) ---
     const links = document.querySelectorAll('.links .link');
     links.forEach(link => {
       const href = (link.getAttribute('href') || '').trim();
@@ -335,6 +355,140 @@
 
     // подставить текущий год в футер
     document.getElementById('year').textContent = new Date().getFullYear();
+
+    /* =========================
+       PARTICLES (серые, тонкие)
+       ========================= */
+
+    (function(){
+      const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if(prefersReduced) return; // если пользователь предпочитает без анимаций — выходим
+
+      const canvas = document.getElementById('particles');
+      const ctx = canvas.getContext('2d');
+      let width = 0, height = 0, particles = [], pointer = {x: null, y: null, active: false};
+
+      // параметры: легко изменять плотность/скорость/размер
+      const CONFIG = {
+        COUNT: Math.round(Math.max(40, (window.innerWidth * window.innerHeight) / 80000)), // адаптивно к экрану
+        SIZE_MIN: 0.6,
+        SIZE_MAX: 2.2,
+        SPEED: 0.25, // базовая скорость
+        ALPHA_MIN: 0.05,
+        ALPHA_MAX: 0.20,
+        CONNECT_DISTANCE: 110, // расстояние для тонких линий (если включить)
+        LINE_ALPHA: 0.06
+      };
+
+      function onResize(){
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', onResize, {passive:true});
+      onResize();
+
+      function rand(min, max){ return Math.random() * (max - min) + min; }
+
+      // создаём массив частиц
+      function createParticles(){
+        particles = [];
+        for(let i=0;i<CONFIG.COUNT;i++){
+          particles.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            r: rand(CONFIG.SIZE_MIN, CONFIG.SIZE_MAX),
+            dx: (Math.random() - 0.5) * CONFIG.SPEED,
+            dy: (Math.random() - 0.5) * CONFIG.SPEED,
+            alpha: rand(CONFIG.ALPHA_MIN, CONFIG.ALPHA_MAX),
+            // немного фаз для лёгкого мерцания
+            phase: Math.random() * Math.PI * 2
+          });
+        }
+      }
+      createParticles();
+
+      // слушаем движение мыши — для лёгкого эффекта парраллакса/отталкивания
+      window.addEventListener('mousemove', e => {
+        pointer.x = e.clientX;
+        pointer.y = e.clientY;
+        pointer.active = true;
+      }, {passive:true});
+      window.addEventListener('mouseout', ()=> { pointer.x = pointer.y = null; pointer.active = false; });
+
+      // основной рендер
+      function render(){
+        ctx.clearRect(0,0,width,height);
+
+        // рисуем тонкие линии между близкими частицами (не ярко, для экономии ресурсов)
+        // (Этот блок можно отключить, оставил выключенным по умолчанию — закомментирован)
+        /*
+        ctx.beginPath();
+        for(let i=0;i<particles.length;i++){
+          for(let j=i+1;j<particles.length;j++){
+            const a = particles[i], b = particles[j];
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const d = Math.sqrt(dx*dx + dy*dy);
+            if(d < CONFIG.CONNECT_DISTANCE){
+              const alpha = (1 - d / CONFIG.CONNECT_DISTANCE) * CONFIG.LINE_ALPHA;
+              ctx.strokeStyle = 'rgba(200,200,200,' + alpha + ')';
+              ctx.lineWidth = 0.6;
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+            }
+          }
+        }
+        ctx.stroke();
+        ctx.closePath();
+        */
+
+        // рисуем частицы
+        particles.forEach(p => {
+          // мягкое мерцание
+          p.phase += 0.02;
+          const pulse = 0.85 + Math.sin(p.phase) * 0.15;
+
+          // движение
+          p.x += p.dx * pulse;
+          p.y += p.dy * pulse;
+
+          // границы — отражение
+          if(p.x < -10) p.x = width + 10;
+          if(p.x > width + 10) p.x = -10;
+          if(p.y < -10) p.y = height + 10;
+          if(p.y > height + 10) p.y = -10;
+
+          // лёгкое отталкивание от курсора
+          if(pointer.active && pointer.x != null){
+            const mx = p.x - pointer.x;
+            const my = p.y - pointer.y;
+            const md = Math.sqrt(mx*mx + my*my);
+            const minDist = 60;
+            if(md < minDist && md > 0){
+              const repel = (1 - md / minDist) * 0.6;
+              p.x += (mx / md) * repel;
+              p.y += (my / md) * repel;
+            }
+          }
+
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(200,200,200,${p.alpha * pulse})`; // серый тон
+          ctx.arc(p.x, p.y, p.r * pulse, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.closePath();
+        });
+
+        requestAnimationFrame(render);
+      }
+
+      // перезапустить при резайзе / смене плотности
+      window.addEventListener('orientationchange', () => { setTimeout(()=> { createParticles(); }, 350); }, {passive:true});
+
+      // старт анимации с небольшой задержкой, чтобы не грузить при старте страницы
+      setTimeout(() => { render(); }, 120);
+    })();
+
   </script>
 </body>
 </html>
+
+
